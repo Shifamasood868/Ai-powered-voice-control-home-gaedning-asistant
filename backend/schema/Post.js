@@ -15,13 +15,19 @@ const postSchema = new mongoose.Schema({
     default: ''
   },
   likes: [{
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User'
+    _id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
+    name: String
   }],
   comments: [{
     author: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'User'
+      _id: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+      },
+      name: String
     },
     content: String,
     createdAt: {

@@ -9,10 +9,13 @@ import {
   User,
   Clock,
   MapPin,
-  Leaf
+  Leaf,
+  Smile,
+  Send
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.jsx';
 import axios from 'axios';
+import { Tooltip as ReactTooltip } from 'react-tooltip';
 
 const CommunitySharing = () => {
   const [posts, setPosts] = useState([]);
@@ -21,6 +24,7 @@ const CommunitySharing = () => {
   const [loading, setLoading] = useState(true);
   const [posting, setPosting] = useState(false);
   const { user } = useAuth();
+  const [commentInputs, setCommentInputs] = useState({});
 
   useEffect(() => {
     fetchPosts();
@@ -39,6 +43,51 @@ const CommunitySharing = () => {
     }
   };
 
+  const setSamplePosts = () => {
+    const samplePosts = [
+      {
+        _id: '1',
+        author: {
+          _id: 'user1',
+          name: 'Alex Johnson',
+          avatar: ''
+        },
+        content: 'Just planted some new tomatoes in my garden today! Anyone have tips for organic pest control?',
+        image: 'https://images.unsplash.com/photo-1594282416546-6e43936a29cf',
+        likes: [
+          { _id: 'user2', name: 'Maria Garcia' },
+          { _id: 'user3', name: 'James Wilson' }
+        ],
+        comments: [
+          {
+            _id: 'comment1',
+            author: { _id: 'user2', name: 'Maria Garcia' },
+            content: 'Try neem oil spray! Works wonders for me.',
+            createdAt: new Date(Date.now() - 3600000)
+          }
+        ],
+        createdAt: new Date(Date.now() - 86400000),
+        tags: ['gardening', 'tomatoes']
+      },
+      {
+        _id: '2',
+        author: {
+          _id: 'user3',
+          name: 'James Wilson',
+          avatar: ''
+        },
+        content: 'My basil plants are thriving this season! Here are my care tips...',
+        image: '',
+        likes: [
+          { _id: 'user1', name: 'Alex Johnson' }
+        ],
+        comments: [],
+        createdAt: new Date(Date.now() - 7200000),
+        tags: ['herbs', 'basil']
+      }
+    ];
+    setPosts(samplePosts);
+  };
 
   const handleCreatePost = async () => {
     if (!newPost.trim() || !user) return;
@@ -60,6 +109,7 @@ const CommunitySharing = () => {
       const demoPost = {
         _id: Date.now().toString(),
         author: {
+          _id: user.id,
           name: user.name,
           avatar: ''
         },
@@ -80,23 +130,69 @@ const CommunitySharing = () => {
 
   const handleLike = async (postId) => {
     try {
-      await axios.post(`http://localhost:5000/api/posts/${postId}/like`);
-      // Update local state
+      const response = await axios.post(`http://localhost:5000/api/posts/${postId}/like`);
+      // Update local state with the updated post from server
+      setPosts(posts.map(post => post._id === postId ? response.data : post));
+    } catch (error) {
+      console.error('Error liking post:', error);
+      // Fallback: Update local state optimistically
       setPosts(posts.map(post => {
         if (post._id === postId) {
-          const isLiked = post.likes.includes(user?.id);
+          const isLiked = post.likes.some(like => like._id === user?.id);
           return {
             ...post,
             likes: isLiked
-              ? post.likes.filter(id => id !== user?.id)
-              : [...post.likes, user?.id]
+              ? post.likes.filter(like => like._id !== user?.id)
+              : [...post.likes, { _id: user.id, name: user.name }]
           };
         }
         return post;
       }));
-    } catch (error) {
-      console.error('Error liking post:', error);
     }
+  };
+
+  const handleAddComment = async (postId, content) => {
+    if (!content.trim() || !user) return;
+
+    try {
+      const response = await axios.post(`http://localhost:5000/api/posts/${postId}/comment`, {
+        content
+      });
+      
+      // Update local state with the updated post from server
+      setPosts(posts.map(post => post._id === postId ? response.data : post));
+      
+      // Clear the comment input
+      setCommentInputs(prev => ({ ...prev, [postId]: '' }));
+    } catch (error) {
+      console.error('Error adding comment:', error);
+      // Fallback: Update local state optimistically
+      setPosts(posts.map(post => {
+        if (post._id === postId) {
+          return {
+            ...post,
+            comments: [
+              ...post.comments,
+              {
+                _id: Date.now().toString(), // temporary ID
+                author: {
+                  _id: user.id,
+                  name: user.name
+                },
+                content,
+                createdAt: new Date()
+              }
+            ]
+          };
+        }
+        return post;
+      }));
+      setCommentInputs(prev => ({ ...prev, [postId]: '' }));
+    }
+  };
+
+  const handleCommentInputChange = (postId, value) => {
+    setCommentInputs(prev => ({ ...prev, [postId]: value }));
   };
 
   const formatTimeAgo = (date) => {
@@ -110,6 +206,13 @@ const CommunitySharing = () => {
     if (hours > 0) return `${hours}h ago`;
     if (minutes > 0) return `${minutes}m ago`;
     return 'Just now';
+  };
+
+  const formatLikers = (likes) => {
+    if (likes.length === 0) return '';
+    if (likes.length === 1) return `Liked by ${likes[0].name}`;
+    if (likes.length === 2) return `Liked by ${likes[0].name} and ${likes[1].name}`;
+    return `Liked by ${likes[0].name}, ${likes[1].name} and ${likes.length - 2} others`;
   };
 
   if (loading) {
@@ -277,18 +380,32 @@ const CommunitySharing = () => {
 
               {/* Post Actions */}
               <div className="px-6 py-4 border-t border-gray-100">
+                {/* Likes count with names */}
+                {post.likes.length > 0 && (
+                  <div className="text-sm text-gray-600 mb-3">
+                    {formatLikers(post.likes)}
+                  </div>
+                )}
+
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center space-x-6">
                     <button
                       onClick={() => handleLike(post._id)}
-                      className={`flex items-center space-x-2 transition-colors ${post.likes.includes(user?.id)
+                      className={`flex items-center space-x-2 transition-colors ${post.likes.some(like => like._id === user?.id)
                           ? 'text-red-500 hover:text-red-600'
                           : 'text-gray-500 hover:text-red-500'
                         }`}
+                      data-tip={post.likes.map(like => like.name).join(', ')}
+                      data-for={`likes-tooltip-${post._id}`}
                     >
-                      <Heart className={`h-5 w-5 ${post.likes.includes(user?.id) ? 'fill-current' : ''}`} />
+                      <Heart className={`h-5 w-5 ${post.likes.some(like => like._id === user?.id) ? 'fill-current' : ''}`} />
                       <span>{post.likes.length}</span>
                     </button>
+                    <ReactTooltip 
+                      id={`likes-tooltip-${post._id}`} 
+                      effect="solid" 
+                      place="top"
+                    />
 
                     <button className="flex items-center space-x-2 text-gray-500 hover:text-blue-500 transition-colors">
                       <MessageCircle className="h-5 w-5" />
@@ -340,11 +457,30 @@ const CommunitySharing = () => {
                         {user.name.charAt(0).toUpperCase()}
                       </span>
                     </div>
-                    <input
-                      type="text"
-                      placeholder="Write a comment..."
-                      className="flex-1 px-3 py-2 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                    />
+                    <div className="flex-1 relative">
+                      <input
+                        type="text"
+                        value={commentInputs[post._id] || ''}
+                        onChange={(e) => handleCommentInputChange(post._id, e.target.value)}
+                        placeholder="Write a comment..."
+                        className="w-full px-3 py-2 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                        onKeyPress={(e) => {
+                          if (e.key === 'Enter' && commentInputs[post._id]?.trim()) {
+                            handleAddComment(post._id, commentInputs[post._id]);
+                          }
+                        }}
+                      />
+                      <button
+                        onClick={() => {
+                          if (commentInputs[post._id]?.trim()) {
+                            handleAddComment(post._id, commentInputs[post._id]);
+                          }
+                        }}
+                        className="absolute right-3 top-2 text-green-500 hover:text-green-600"
+                      >
+                        <Send className="h-5 w-5" />
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>

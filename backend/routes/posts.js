@@ -9,7 +9,8 @@ router.get('/', async (req, res) => {
   try {
     const posts = await Post.find()
       .populate('author', 'name avatar')
-      .populate('comments.author', 'name avatar')
+      .populate('likes._id', 'name')
+      .populate('comments.author._id', 'name avatar')
       .sort({ createdAt: -1 });
     
     res.json(posts);
@@ -44,14 +45,30 @@ router.post('/:id/like', auth, async (req, res) => {
   try {
     const post = await Post.findById(req.params.id);
     
-    if (post.likes.includes(req.user._id)) {
-      post.likes = post.likes.filter(id => !id.equals(req.user._id));
+    const existingLikeIndex = post.likes.findIndex(
+      like => like._id.toString() === req.user._id.toString()
+    );
+
+    if (existingLikeIndex >= 0) {
+      // Unlike the post
+      post.likes.splice(existingLikeIndex, 1);
     } else {
-      post.likes.push(req.user._id);
+      // Like the post
+      post.likes.push({
+        _id: req.user._id,
+        name: req.user.name
+      });
     }
     
     await post.save();
-    res.json(post);
+    
+    // Populate the likes for the response
+    const updatedPost = await Post.findById(post._id)
+      .populate('likes._id', 'name')
+      .populate('author', 'name avatar')
+      .populate('comments.author._id', 'name avatar');
+    
+    res.json(updatedPost);
   } catch (error) {
     res.status(500).json({ message: 'Server error' });
   }
@@ -64,14 +81,23 @@ router.post('/:id/comment', auth, async (req, res) => {
     const post = await Post.findById(req.params.id);
     
     post.comments.push({
-      author: req.user._id,
-      content
+      author: {
+        _id: req.user._id,
+        name: req.user.name
+      },
+      content,
+      createdAt: new Date()
     });
     
     await post.save();
-    await post.populate('comments.author', 'name avatar');
     
-    res.json(post);
+    // Populate all necessary fields for the response
+    const updatedPost = await Post.findById(post._id)
+      .populate('likes._id', 'name')
+      .populate('author', 'name avatar')
+      .populate('comments.author._id', 'name avatar');
+    
+    res.json(updatedPost);
   } catch (error) {
     res.status(500).json({ message: 'Server error' });
   }
